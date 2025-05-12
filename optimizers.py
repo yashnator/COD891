@@ -141,3 +141,62 @@ class ToffoliTCountReduction(TransformationPass):
                 # Substitute the node in the DAG
                 # dag.substitute_node_with_dag(node, opt_toffoli.to_instruction().definition)
         return dag
+    
+from qiskit.circuit.library.standard_gates import SwapGate
+from qiskit.transpiler.basepasses import TransformationPass
+from qiskit.dagcircuit import DAGOpNode
+
+
+class OptimizeConsecutiveSwaps(TransformationPass):
+    def run(self, dag):
+        swap_nodes = dag.op_nodes(SwapGate)
+        swaps_to_remove = set()
+
+        for swap in swap_nodes:
+            if swap in swaps_to_remove:
+                continue
+            swap_qubits = swap.qargs
+            successors = list(dag.successors(swap))
+
+            for succ in successors:
+                if isinstance(succ, DAGOpNode) and isinstance(succ.op, SwapGate):
+                    succ_qubits = succ.qargs
+                    if set(swap_qubits) == set(succ_qubits):
+                        swaps_to_remove.add(swap)
+                        swaps_to_remove.add(succ)
+                        break
+
+        for swap in swaps_to_remove:
+            dag.remove_op_node(swap)
+
+        return dag
+
+class MergeAdjacentSwapsPass(TransformationPass):
+    def run(self, dag):
+        swap_nodes = list(dag.op_nodes(SwapGate))
+        swaps_to_remove = set()
+
+        for swap in swap_nodes:
+            if swap in swaps_to_remove:
+                continue
+
+            qargs1 = swap.qargs
+            successors = list(dag.successors(swap))
+
+            for succ in successors:
+                if (
+                    isinstance(succ, DAGOpNode)
+                    and isinstance(succ.op, SwapGate)
+                    and succ not in swaps_to_remove
+                ):
+                    qargs2 = succ.qargs
+                    common_qubits = set(qargs1).intersection(set(qargs2))
+                    if len(common_qubits) == 1:
+                        swaps_to_remove.add(swap)
+                        swaps_to_remove.add(succ)
+                        break
+
+        for swap in swaps_to_remove:
+            dag.remove_op_node(swap)
+
+        return dag
